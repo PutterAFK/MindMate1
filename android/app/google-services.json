@@ -1,0 +1,54 @@
+{
+  "project_info": {
+    "project_number": "236175446129",
+    "project_id": "mind-mate-43111",
+    "storage_bucket": "mind-mate-43111.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:236175446129:android:76b9fffb1b0b29bbde8bd0",
+        "android_client_info": {
+          "package_name": "com.yourname.my_app_new"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "236175446129-4k4ltnqf2lkp9m2om65uk57ntcbc9u7s.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.yourname.my_app_new",
+            "certificate_hash": "59eb6a7582c43598547d5827597b6d7f32ad7b2b"
+          }
+        },
+        {
+          "client_id": "236175446129-v1mpbjjbk4230qdk9dj6i3t7rtaqdf4o.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCgu3e9AdS_5LLdWVEiX56StHfVq5vphWA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "236175446129-v1mpbjjbk4230qdk9dj6i3t7rtaqdf4o.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "236175446129-nrj6i4p3kqudue0ffmdqddvf36vgd1ko.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.yourname.myAppNew"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
