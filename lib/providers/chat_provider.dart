@@ -9,15 +9,15 @@ class ChatProvider extends ChangeNotifier {
   final DatabaseService _dbService = DatabaseService();
   final AIService _aiService = AIService();
 
-  // ข้อความใน Conversation ปัจจุบัน
+  // messages ปัจจุบัน
   final List<MessageModel> _messages = [];
   List<MessageModel> get messages => _messages;
 
-  // รายการ Conversations ทั้งหมด
+  // conversations ทั้งหมด
   List<ConversationModel> _conversations = [];
   List<ConversationModel> get conversations => _conversations;
 
-  // Conversation ที่เปิดอยู่
+  // conversation ที่เปิดอยู่
   String? _currentConversationId;
   String? get currentConversationId => _currentConversationId;
 
@@ -29,17 +29,21 @@ class ChatProvider extends ChangeNotifier {
 
   String? get _userId => FirebaseAuth.instance.currentUser?.uid;
 
-  // โหลดรายการ Conversations ทั้งหมด
+  // =========================
+  // โหลด conversations
+  // =========================
   void loadConversations() {
     if (_userId == null) return;
 
-    _dbService.getConversations(_userId!).listen((conversations) {
-      _conversations = conversations;
+    _dbService.getConversations(_userId!).listen((data) {
+      _conversations = data;
       notifyListeners();
     });
   }
 
-  // สร้าง Conversation ใหม่
+  // =========================
+  // สร้าง chat ใหม่
+  // =========================
   Future<void> startNewChat() async {
     if (_userId == null) return;
 
@@ -47,17 +51,21 @@ class ChatProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final id = await _dbService.createConversation(_userId!, 'แชทใหม่');
+      final id = await _dbService.createConversation(
+        _userId!,
+        'แชทใหม่',
+      );
+
       await openConversation(id);
-    } catch (e) {
-      // handle error
     } finally {
       _isLoading = false;
       notifyListeners();
     }
   }
 
-  // เปิด Conversation ที่มีอยู่แล้ว
+  // =========================
+  // เปิด conversation
+  // =========================
   Future<void> openConversation(String conversationId) async {
     if (_userId == null) return;
 
@@ -66,41 +74,49 @@ class ChatProvider extends ChangeNotifier {
     notifyListeners();
 
     _dbService
-        .getMessages(userId: _userId!, conversationId: conversationId)
-        .listen((messages) {
-          _messages.clear();
-          _messages.addAll(messages);
-          notifyListeners();
-        });
+        .getMessages(
+          userId: _userId!,
+          conversationId: conversationId,
+        )
+        .listen((data) {
+      _messages.clear();
+      _messages.addAll(data);
+      notifyListeners();
+    });
   }
 
-  // ลบ Conversation
+  // =========================
+  // ลบ conversation (FIXED)
+  // =========================
   Future<void> deleteConversation(String conversationId) async {
     if (_userId == null) return;
 
-    await _dbService.deleteConversation(_userId!, conversationId);
+    await _dbService.deleteConversation(
+      _userId!,
+      conversationId,
+    );
 
-    // ถ้าลบ Conversation ที่เปิดอยู่
     if (_currentConversationId == conversationId) {
       _currentConversationId = null;
       _messages.clear();
-      notifyListeners();
     }
+
+    notifyListeners();
   }
 
+  // =========================
   // ส่งข้อความ
+  // =========================
   Future<void> sendMessage(String content) async {
     if (content.trim().isEmpty) return;
     if (_userId == null) return;
 
-    // ถ้ายังไม่มี Conversation → สร้างใหม่อัตโนมัติ
     if (_currentConversationId == null) {
       await startNewChat();
     }
 
     final conversationId = _currentConversationId!;
 
-    // ข้อความ User
     final userMessage = MessageModel(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
       content: content.trim(),
@@ -112,46 +128,29 @@ class ChatProvider extends ChangeNotifier {
     _messages.add(userMessage);
     notifyListeners();
 
-    // บันทึกลง Firestore
     await _dbService.saveMessage(
       userId: _userId!,
       conversationId: conversationId,
       message: userMessage,
     );
 
-    // อัปเดต Title ของ Conversation (ใช้ข้อความแรก)
-    final isFirstMessage = _messages.length == 1;
-    await _dbService.updateConversation(
-      userId: _userId!,
-      conversationId: conversationId,
-      lastMessage: content.trim(),
-      title: isFirstMessage
-          ? content.trim().substring(
-              0,
-              content.trim().length > 30 ? 30 : content.trim().length,
-            )
-          : null,
-    );
-
-    // Typing indicator
     _isTyping = true;
     notifyListeners();
 
-    // เรียก AI API จริง
-    String botReply;
+    String reply;
+
     try {
-      botReply = await _aiService.sendMessage(
+      reply = await _aiService.sendMessage(
         message: content,
         userId: _userId!,
       );
     } catch (e) {
-      // ถ้า AI Error ให้แสดง Error message
-      botReply = '⚠️ ${e.toString()}';
+      reply = '⚠️ ${e.toString()}';
     }
 
     final botMessage = MessageModel(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
-      content: botReply,
+      content: reply,
       role: 'bot',
       timestamp: DateTime.now(),
       conversationId: conversationId,
@@ -165,12 +164,6 @@ class ChatProvider extends ChangeNotifier {
       userId: _userId!,
       conversationId: conversationId,
       message: botMessage,
-    );
-
-    await _dbService.updateConversation(
-      userId: _userId!,
-      conversationId: conversationId,
-      lastMessage: botMessage.content,
     );
   }
 }
