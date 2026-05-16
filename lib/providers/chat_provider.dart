@@ -47,7 +47,11 @@ class ChatProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final id = await _dbService.createConversation(_userId!, 'แชทใหม่');
+      final id = await _dbService.createConversation(
+        _userId!,
+        'แชทใหม่',
+      );
+
       await openConversation(id);
     } catch (e) {
       // handle error
@@ -66,7 +70,10 @@ class ChatProvider extends ChangeNotifier {
     notifyListeners();
 
     _dbService
-        .getMessages(userId: _userId!, conversationId: conversationId)
+        .getMessages(
+          userId: _userId!,
+          conversationId: conversationId,
+        )
         .listen((messages) {
           _messages.clear();
           _messages.addAll(messages);
@@ -78,14 +85,18 @@ class ChatProvider extends ChangeNotifier {
   Future<void> deleteConversation(String conversationId) async {
     if (_userId == null) return;
 
-    await _dbService.deleteConversation(_userId!, conversationId);
+    await _dbService.deleteConversation(
+      _userId!,
+      conversationId,
+    );
 
-    // ถ้าลบ Conversation ที่เปิดอยู่
+    // ถ้าลบห้องที่กำลังเปิดอยู่
     if (_currentConversationId == conversationId) {
       _currentConversationId = null;
       _messages.clear();
-      notifyListeners();
     }
+
+    notifyListeners();
   }
 
   // ส่งข้อความ
@@ -112,15 +123,16 @@ class ChatProvider extends ChangeNotifier {
     _messages.add(userMessage);
     notifyListeners();
 
-    // บันทึกลง Firestore
+    // บันทึกลง Database
     await _dbService.saveMessage(
       userId: _userId!,
       conversationId: conversationId,
       message: userMessage,
     );
 
-    // อัปเดต Title ของ Conversation (ใช้ข้อความแรก)
+    // อัปเดต Title ของ Conversation
     final isFirstMessage = _messages.length == 1;
+
     await _dbService.updateConversation(
       userId: _userId!,
       conversationId: conversationId,
@@ -128,7 +140,9 @@ class ChatProvider extends ChangeNotifier {
       title: isFirstMessage
           ? content.trim().substring(
               0,
-              content.trim().length > 30 ? 30 : content.trim().length,
+              content.trim().length > 30
+                  ? 30
+                  : content.trim().length,
             )
           : null,
     );
@@ -137,15 +151,15 @@ class ChatProvider extends ChangeNotifier {
     _isTyping = true;
     notifyListeners();
 
-    // เรียก AI API จริง
+    // เรียก AI
     String botReply;
+
     try {
       botReply = await _aiService.sendMessage(
         message: content,
         userId: _userId!,
       );
     } catch (e) {
-      // ถ้า AI Error ให้แสดง Error message
       botReply = '⚠️ ${e.toString()}';
     }
 
