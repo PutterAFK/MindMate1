@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+
 import 'package:my_app_new/models/conversation_model.dart';
 import 'package:my_app_new/models/message_model.dart';
+
 import 'package:my_app_new/services/ai_service.dart';
 import 'package:my_app_new/services/database_service.dart';
 
@@ -9,15 +11,15 @@ class ChatProvider extends ChangeNotifier {
   final DatabaseService _dbService = DatabaseService();
   final AIService _aiService = AIService();
 
-  // ข้อความใน Conversation ปัจจุบัน
+  // Current Messages
   final List<MessageModel> _messages = [];
   List<MessageModel> get messages => _messages;
 
-  // รายการ Conversations ทั้งหมด
+  // All Conversations
   List<ConversationModel> _conversations = [];
   List<ConversationModel> get conversations => _conversations;
 
-  // Conversation ที่เปิดอยู่
+  // Current Opened Conversation
   String? _currentConversationId;
   String? get currentConversationId => _currentConversationId;
 
@@ -29,17 +31,21 @@ class ChatProvider extends ChangeNotifier {
 
   String? get _userId => FirebaseAuth.instance.currentUser?.uid;
 
-  // โหลดรายการ Conversations ทั้งหมด
+  // ============================
+  // Load Conversations
+  // ============================
   void loadConversations() {
     if (_userId == null) return;
 
-    _dbService.getConversations(_userId!).listen((conversations) {
-      _conversations = conversations;
+    _dbService.getConversations(_userId!).listen((data) {
+      _conversations = data;
       notifyListeners();
     });
   }
 
-  // สร้าง Conversation ใหม่
+  // ============================
+  // Create New Chat
+  // ============================
   Future<void> startNewChat() async {
     if (_userId == null) return;
 
@@ -47,60 +53,87 @@ class ChatProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final id = await _dbService.createConversation(_userId!, 'แชทใหม่');
-      await openConversation(id);
+      final conversationId = await _dbService.createConversation(
+        _userId!,
+        'แชทใหม่',
+      );
+
+      await openConversation(conversationId);
     } catch (e) {
-      // handle error
+      debugPrint('Create chat error: $e');
     } finally {
       _isLoading = false;
       notifyListeners();
     }
   }
 
-  // เปิด Conversation ที่มีอยู่แล้ว
+  // ============================
+  // Open Existing Conversation
+  // ============================
   Future<void> openConversation(String conversationId) async {
     if (_userId == null) return;
 
     _currentConversationId = conversationId;
+
     _messages.clear();
     notifyListeners();
 
     _dbService
-        .getMessages(userId: _userId!, conversationId: conversationId)
-        .listen((messages) {
-          _messages.clear();
-          _messages.addAll(messages);
-          notifyListeners();
-        });
+        .getMessages(
+          userId: _userId!,
+          conversationId: conversationId,
+        )
+        .listen((data) {
+      _messages.clear();
+      _messages.addAll(data);
+      notifyListeners();
+    });
   }
 
-  // ลบ Conversation
+  // ============================
+  // Delete Conversation
+  // ============================
   Future<void> deleteConversation(String conversationId) async {
     if (_userId == null) return;
 
-    await _dbService.deleteConversation(_userId!, conversationId);
+    try {
+      await _dbService.deleteConversation(
+        _userId!,
+        conversationId,
+      );
 
-    // ถ้าลบ Conversation ที่เปิดอยู่
-    if (_currentConversationId == conversationId) {
-      _currentConversationId = null;
-      _messages.clear();
+      // Remove from UI instantly
+      _conversations.removeWhere(
+        (item) => item.id == conversationId,
+      );
+
+      // If deleting current opened chat
+      if (_currentConversationId == conversationId) {
+        _currentConversationId = null;
+        _messages.clear();
+      }
+
       notifyListeners();
+    } catch (e) {
+      debugPrint('Delete error: $e');
     }
   }
 
-  // ส่งข้อความ
+  // ============================
+  // Send Message
+  // ============================
   Future<void> sendMessage(String content) async {
     if (content.trim().isEmpty) return;
     if (_userId == null) return;
 
-    // ถ้ายังไม่มี Conversation → สร้างใหม่อัตโนมัติ
+    // Auto create chat
     if (_currentConversationId == null) {
       await startNewChat();
     }
 
     final conversationId = _currentConversationId!;
 
-    // ข้อความ User
+    // User message
     final userMessage = MessageModel(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
       content: content.trim(),
@@ -112,15 +145,16 @@ class ChatProvider extends ChangeNotifier {
     _messages.add(userMessage);
     notifyListeners();
 
-    // บันทึกลง Firestore
+    // Save to database
     await _dbService.saveMessage(
       userId: _userId!,
       conversationId: conversationId,
       message: userMessage,
     );
 
-    // อัปเดต Title ของ Conversation (ใช้ข้อความแรก)
+    // Update conversation info
     final isFirstMessage = _messages.length == 1;
+
     await _dbService.updateConversation(
       userId: _userId!,
       conversationId: conversationId,
@@ -128,49 +162,55 @@ class ChatProvider extends ChangeNotifier {
       title: isFirstMessage
           ? content.trim().substring(
               0,
-              content.trim().length > 30 ? 30 : content.trim().length,
+              content.trim().length > 30
+                  ? 30
+                  : content.trim().length,
             )
           : null,
     );
 
-    // Typing indicator
+    // Typing UI
     _isTyping = true;
     notifyListeners();
 
-    // เรียก AI API จริง
-    String botReply;
+    // Ask AI
+    String aiReply;
+
     try {
-      botReply = await _aiService.sendMessage(
+      aiReply = await _aiService.sendMessage(
         message: content,
         userId: _userId!,
       );
     } catch (e) {
-      // ถ้า AI Error ให้แสดง Error message
-      botReply = '⚠️ ${e.toString()}';
+      aiReply = '⚠️ ${e.toString()}';
     }
 
+    // Bot message
     final botMessage = MessageModel(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
-      content: botReply,
+      content: aiReply,
       role: 'bot',
       timestamp: DateTime.now(),
       conversationId: conversationId,
     );
 
     _messages.add(botMessage);
+
     _isTyping = false;
     notifyListeners();
 
+    // Save bot message
     await _dbService.saveMessage(
       userId: _userId!,
       conversationId: conversationId,
       message: botMessage,
     );
 
+    // Update conversation
     await _dbService.updateConversation(
       userId: _userId!,
       conversationId: conversationId,
-      lastMessage: botMessage.content,
+      lastMessage: aiReply,
     );
   }
 }
